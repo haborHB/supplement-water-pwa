@@ -1,0 +1,10 @@
+# Local health-data exports. Do not commit these to a public repository.
+supplement-water-*.json
+backup*.json
+
+# Local secrets and editor files.
+.env
+.env.*
+*.local
+.DS_Store
+Thumbs.db
