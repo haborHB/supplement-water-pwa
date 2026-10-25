@@ -1,5 +1,6 @@
 const DB_NAME = "supplement-water-log";
 const DB_VERSION = 1;
+const APP_VERSION = "2026.10.25.1";
 const TODAY = dateKey(new Date());
 
 const state = {
@@ -17,7 +18,9 @@ const state = {
 const viewRoot = document.querySelector("#view-root");
 const modal = document.querySelector("#supplement-modal");
 const toast = document.querySelector("#toast");
+const supplementForm = document.getElementById("supplement-form");
 let toastTimer;
+let savingSupplement = false;
 
 const db = openDatabase();
 
@@ -193,10 +196,19 @@ function bindGlobalEvents() {
     if (event.target.closest("#install-button")) {
       await installPwa();
     }
+
+    if (event.target.closest("#reload-app-button")) {
+      if (!modal.classList.contains("is-hidden")) {
+        showToast("请先保存或关闭正在编辑的档案");
+        return;
+      }
+      window.location.reload();
+    }
   });
 
   document.addEventListener("submit", async (event) => {
-    if (event.target.id === "custom-water-form") {
+    // Named form controls can shadow native properties such as form.id.
+    if (event.target === document.querySelector("#custom-water-form")) {
       event.preventDefault();
       const amount = Number(new FormData(event.target).get("amount"));
       if (amount > 0) {
@@ -204,7 +216,7 @@ function bindGlobalEvents() {
         event.target.reset();
       }
     }
-    if (event.target.id === "supplement-form") {
+    if (event.target === supplementForm) {
       event.preventDefault();
       await saveSupplement(event.target);
     }
@@ -519,6 +531,7 @@ function renderSettings() {
       <div>
         <p class="eyebrow">SETTINGS</p>
         <h2>设置与备份</h2>
+        <p class="muted">版本 ${APP_VERSION}</p>
       </div>
     </div>
     <section class="surface settings-grid">
@@ -722,6 +735,10 @@ async function saveWaterGoal() {
 }
 
 function openSupplementModal(supplementId = "") {
+  if (savingSupplement) return;
+  const errorMessage = document.querySelector("#supplement-save-error");
+  errorMessage.textContent = "";
+  errorMessage.hidden = true;
   const supplement = state.supplements.find((item) => item.id === supplementId);
   const version = getCurrentVersion(supplement);
   document.querySelector("#modal-title").textContent = supplement ? "编辑补剂档案" : "新增补剂";
@@ -743,6 +760,7 @@ function openSupplementModal(supplementId = "") {
 }
 
 function closeSupplementModal() {
+  if (savingSupplement) return;
   modal.classList.add("is-hidden");
 }
 
@@ -762,62 +780,97 @@ function addIngredientRow(ingredient = { name: "", amount: "", unit: "mg", form:
 }
 
 async function saveSupplement(form) {
-  const formData = new FormData(form);
-  const name = String(formData.get("name") || "").trim();
-  if (!name) {
-    showToast("请先填写补剂名称");
-    return;
-  }
-  const existingId = String(formData.get("id") || "").trim();
-  const existing = state.supplements.find((item) => item.id === existingId);
-  const supplementId = existing?.id || makeId();
-  const ingredients = [...document.querySelectorAll("#ingredient-list .ingredient-row")]
-    .map((row) => ({
-      name: row.querySelector('[data-field="name"]').value.trim(),
-      amount: Number(row.querySelector('[data-field="amount"]').value),
-      unit: row.querySelector('[data-field="unit"]').value.trim(),
-      form: "",
-    }))
-    .filter((item) => item.name && Number.isFinite(item.amount) && item.amount >= 0 && item.unit);
-  const version = {
-    id: makeId(),
-    supplementId,
-    effectiveFrom: dateKey(new Date()),
-    ingredients,
-    sourceText: String(document.querySelector("#ingredient-raw-text").value || "").trim(),
-    labelNote: String(formData.get("notes") || "").trim(),
-    createdAt: Date.now(),
-  };
-  const supplement = {
-    id: supplementId,
-    name,
-    brand: String(formData.get("brand") || "").trim(),
-    form: String(formData.get("form") || "").trim(),
-    unitLabel: String(formData.get("unitLabel") || "单位").trim() || "单位",
-    dailyTargetUnits: Number(formData.get("dailyTargetUnits")) || 0,
-    timing: String(formData.get("timing") || "").trim(),
-    notes: String(formData.get("notes") || "").trim(),
-    currentVersionId: version.id,
-    archived: false,
-    createdAt: existing?.createdAt || Date.now(),
-    updatedAt: Date.now(),
-  };
+  if (savingSupplement) return;
+  savingSupplement = true;
+  const submitButton = form.querySelector('[type="submit"]');
+  const errorMessage = document.querySelector("#supplement-save-error");
+  submitButton.disabled = true;
+  submitButton.textContent = "正在保存…";
+  errorMessage.textContent = "";
+  errorMessage.hidden = true;
+  let saved = false;
 
-  if (existing) {
-    Object.assign(existing, supplement);
-    const versionIndex = state.versions.findIndex((item) => item.id === version.id);
-    if (versionIndex >= 0) state.versions[versionIndex] = version;
-    else state.versions.push(version);
-  } else {
-    state.supplements.push(supplement);
+  try {
+    const formData = new FormData(form);
+    const name = String(formData.get("name") || "").trim();
+    if (!name) {
+      errorMessage.textContent = "请先填写补剂名称";
+      errorMessage.hidden = false;
+      return;
+    }
+    const existingId = String(formData.get("supplementId") || "").trim();
+    const existing = state.supplements.find((item) => item.id === existingId);
+    const supplementId = existing?.id || makeId();
+    const ingredients = [...form.querySelectorAll("#ingredient-list .ingredient-row")]
+      .map((row) => ({
+        name: row.querySelector('[data-field="name"]').value.trim(),
+        amount: Number(row.querySelector('[data-field="amount"]').value),
+        unit: row.querySelector('[data-field="unit"]').value.trim(),
+        form: "",
+      }))
+      .filter((item) => item.name && Number.isFinite(item.amount) && item.amount >= 0 && item.unit);
+    const version = {
+      id: makeId(),
+      supplementId,
+      effectiveFrom: dateKey(new Date()),
+      ingredients,
+      sourceText: String(document.querySelector("#ingredient-raw-text").value || "").trim(),
+      labelNote: String(formData.get("notes") || "").trim(),
+      createdAt: Date.now(),
+    };
+    const supplement = {
+      id: supplementId,
+      name,
+      brand: String(formData.get("brand") || "").trim(),
+      form: String(formData.get("form") || "").trim(),
+      unitLabel: String(formData.get("unitLabel") || "单位").trim() || "单位",
+      dailyTargetUnits: Number(formData.get("dailyTargetUnits")) || 0,
+      timing: String(formData.get("timing") || "").trim(),
+      notes: String(formData.get("notes") || "").trim(),
+      currentVersionId: version.id,
+      archived: existing?.archived || false,
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await persistSupplement(supplement, version);
+    if (existing) Object.assign(existing, supplement);
+    else state.supplements.push(supplement);
     state.versions.push(version);
+    state.activeView = existing ? "supplement-detail" : "supplements";
+    state.selectedSupplementId = supplementId;
+    saved = true;
+    showToast(existing ? "补剂档案已更新" : "补剂档案已建立");
+  } catch (error) {
+    console.error("Supplement save failed", error);
+    errorMessage.textContent = "保存失败，填写内容已保留。请检查浏览器是否允许本地存储，然后重试。";
+    errorMessage.hidden = false;
+  } finally {
+    savingSupplement = false;
+    submitButton.disabled = false;
+    submitButton.textContent = "保存档案";
   }
-  await Promise.all([putRecord("supplements", supplement), putRecord("versions", version)]);
-  closeSupplementModal();
-  state.activeView = existing ? "supplement-detail" : "supplements";
-  state.selectedSupplementId = supplementId;
-  showToast(existing ? "补剂档案已更新" : "补剂档案已建立");
-  render();
+  if (saved) {
+    closeSupplementModal();
+    render();
+  }
+}
+
+async function persistSupplement(supplement, version) {
+  const database = await db;
+  await new Promise((resolve, reject) => {
+    // Both records must commit before the UI reports success.
+    const transaction = database.transaction(["supplements", "versions"], "readwrite");
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error || new Error("Supplement transaction aborted"));
+    try {
+      transaction.objectStore("supplements").put(supplement);
+      transaction.objectStore("versions").put(version);
+    } catch (error) {
+      transaction.abort();
+      reject(error);
+    }
+  });
 }
 
 function parseIngredientText() {
@@ -984,7 +1037,18 @@ async function installPwa() {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch((error) => console.warn("Service worker registration failed", error));
+    let controlled = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (controlled) document.querySelector("#app-update-notice").hidden = false;
+      controlled = true;
+    });
+    navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" })
+      .then((registration) => {
+        const checkUpdate = () => registration.update().catch((error) => console.warn("Update check failed", error));
+        checkUpdate();
+        window.addEventListener("focus", checkUpdate);
+      })
+      .catch((error) => console.warn("Service worker registration failed", error));
   }
 }
 

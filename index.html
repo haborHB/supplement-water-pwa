@@ -20,6 +20,11 @@
         <button class="icon-button" id="install-button" type="button" title="安装到手机主屏幕" aria-label="安装到手机主屏幕" hidden>↓</button>
       </header>
 
+      <div class="update-notice" id="app-update-notice" role="status" hidden>
+        <span>新版本已就绪，刷新后生效。</span>
+        <button class="small-button" id="reload-app-button" type="button">刷新</button>
+      </div>
+
       <main id="view-root" class="view-root" aria-live="polite"></main>
 
       <nav class="bottom-nav" aria-label="主导航">
@@ -52,7 +57,7 @@
           <button class="icon-button secondary" id="close-modal-button" type="button" title="关闭" aria-label="关闭">×</button>
         </div>
         <form id="supplement-form">
-          <input id="supplement-id" name="id" type="hidden">
+          <input id="supplement-id" name="supplementId" type="hidden">
           <label>
             补剂名称
             <input id="supplement-name" name="name" type="text" placeholder="例如：维生素 D3" required>
@@ -107,6 +112,7 @@
             <button class="text-button" id="cancel-modal-button" type="button">取消</button>
             <button class="primary-button" type="submit">保存档案</button>
           </div>
+          <p id="supplement-save-error" class="form-error" role="alert" hidden></p>
         </form>
       </section>
     </div>

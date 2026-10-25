@@ -8,3 +8,4 @@ backup*.json
 *.local
 .DS_Store
 Thumbs.db
+node_modules/
